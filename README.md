@@ -1,4 +1,4 @@
-# servant-graphql
+# servant-graphql-example
 servant + graphql + token auth (e.g., JWT) + database
 
 Exploring how to integrate servant, graphql, and authentication.  Turns out, it's pretty simple.
