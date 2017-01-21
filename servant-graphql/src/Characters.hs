@@ -2,7 +2,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Characters where
 
-import           BasicPrelude
+import           BasicPrelude           hiding (empty)
+import           Control.Applicative    (Alternative, empty, liftA2)
 import           Control.Concurrent.STM (STM, TVar, newTVarIO)
 import           Data.Aeson
 import           Data.Map.Strict        (fromList)
@@ -52,6 +53,28 @@ instance ToJSON Droid
 x = toJSON luke
 
 type Character = Either Droid Human
+
+-- I still don't think this is cumbersome enough to bring lens
+
+id_ :: Character -> ID
+id_ (Left  x) = _id_ . _droidChar $ x
+id_ (Right x) = _id_ . _humanChar $ x
+
+name :: Character -> Text
+name (Left  x) = _name . _droidChar $ x
+name (Right x) = _name . _humanChar $ x
+
+friends :: Character -> [ID]
+friends (Left  x) = _friends . _droidChar $ x
+friends (Right x) = _friends . _humanChar $ x
+
+appearsIn :: Character -> [Int]
+appearsIn (Left  x) = _appearsIn . _droidChar $ x
+appearsIn (Right x) = _appearsIn . _humanChar $ x
+
+secretBackstory :: Character -> Text
+secretBackstory = error "secretBackstory is secret."
+
 
 luke :: Character
 luke = Right luke'
@@ -150,3 +173,40 @@ artoo' = Droid
       }
   , primaryFunction = "Astrometch"
   }
+
+-- ** Helper functions
+
+getHero :: Int -> Character
+getHero 5 = luke
+getHero _ = artoo
+
+getHeroIO :: Int -> IO Character
+getHeroIO = pure . getHero
+
+getHuman :: Alternative f => ID -> f Character
+getHuman = fmap Right . getHuman'
+
+getHuman' :: Alternative f => ID -> f Human
+getHuman' "1000" = pure luke'
+getHuman' "1001" = pure vader'
+getHuman' "1002" = pure han'
+getHuman' "1003" = pure leia'
+getHuman' "1004" = pure tarkin'
+getHuman' _      = empty
+
+getDroid :: Alternative f => ID -> f Character
+getDroid = fmap Left . getDroid'
+
+getDroid' :: Alternative f => ID -> f Droid
+getDroid' "2000" = pure threepio'
+getDroid' "2001" = pure artoo'
+getDroid' _      = empty
+
+getFriends :: Character -> [Character]
+getFriends char = catMaybes $ liftA2 (<|>) getDroid getHuman <$> friends char
+
+getEpisode :: Alternative f => Int -> f Text
+getEpisode 4 = pure "NEWHOPE"
+getEpisode 5 = pure "EMPIRE"
+getEpisode 6 = pure "JEDI"
+getEpisode _ = empty
