@@ -9,11 +9,12 @@
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeOperators         #-}
 
 module Application where
 
-import           BasicPrelude               hiding (lookup)
+import           BasicPrelude
 
 import           Control.Monad.Trans.Except
 
@@ -21,22 +22,39 @@ import           Network.Wai
 import           Network.Wai.Handler.Warp
 
 import           Control.Concurrent.STM
-import           Data.Map.Strict            (lookup)
+import qualified Data.Map.Strict                  as M
 
 import           Data.Aeson
 import           GHC.Generics
 import           Servant
+import           Servant.API.Experimental.Auth
 import           Servant.Docs
 import           Servant.Mock
+import           Servant.Server.Experimental.Auth
 
 import           Lucid
 import           Servant.HTML.Lucid
 
 import           Characters
 
+type instance AuthServerData (AuthProtect "x-auth-token") = ByteString
+
+authHandler :: AuthHandler Request ByteString
+authHandler = mkAuthHandler handler
+  where
+    handler req =
+      case lookup "x-auth-token" (requestHeaders req) of
+        Nothing -> throwError (err401 { errBody = "Missing auth header" } )
+        Just token -> if token == "open sesame"
+                      then return token
+                      else throwError (err401 { errBody = "Incorrect token" } )
+
+genAuthServerContext :: Context (AuthHandler Request ByteString ': '[])
+genAuthServerContext = authHandler :. EmptyContext
+
 type MyAPI = GetCharacter :<|> Home
 
-type GetCharacter = "character" :> Capture "character name" Text :> Get '[ JSON ] Character
+type GetCharacter = "character" :> Capture "character name" Text :> AuthProtect "x-auth-token" :> Get '[ JSON ] Character
 
 type Home = Get '[HTML] (Html ())
 
@@ -51,11 +69,11 @@ homePage = return $ do
 myAPI :: Proxy MyAPI
 myAPI = Proxy
 
-getCharacter :: Text -> Handler Character
-getCharacter character = do
+getCharacter :: Text -> ByteString -> Handler Character
+getCharacter character _ = do
   db' <- liftIO $ database
   db <- liftIO $ readTVarIO db'
-  case (lookup character db) of
+  case (M.lookup character db) of
     Nothing -> throwE err404
     Just c  -> return c
 
@@ -63,7 +81,7 @@ server :: Server MyAPI
 server = getCharacter :<|> homePage
 
 mkApp :: IO Application
-mkApp = return $ serve myAPI server
+mkApp = return $ serveWithContext myAPI genAuthServerContext server
 
 run :: IO ()
 run = do
